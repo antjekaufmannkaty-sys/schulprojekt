@@ -137,8 +137,9 @@ export async function findSessionByCode(code: string): Promise<Session | null> {
   const { data, error } = await supabase
     .from('sessions')
     .select('*')
-    .ilike('id', code.toLowerCase().replace(/-/g, '') + '%')
-    .single()
+    .order('created_at', { ascending: false })
+    .limit(200)
   if (error || !data) return null
-  return data
+  const match = (data as Session[]).find(s => sessionCodeFromId(s.id) === code.toUpperCase())
+  return match ?? null
 }
