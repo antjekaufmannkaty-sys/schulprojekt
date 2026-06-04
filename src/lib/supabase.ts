@@ -133,6 +133,13 @@ export function sessionCodeFromId(id: string): string {
   return id.replace(/-/g, '').substring(0, 6).toUpperCase()
 }
 
+export async function deleteSession(sessionId: string): Promise<void> {
+  await supabase.from('events').delete().eq('session_id', sessionId)
+  await supabase.from('participants').delete().eq('session_id', sessionId)
+  const { error } = await supabase.from('sessions').delete().eq('id', sessionId)
+  if (error) throw error
+}
+
 export async function findSessionByCode(code: string): Promise<Session | null> {
   const { data, error } = await supabase
     .from('sessions')

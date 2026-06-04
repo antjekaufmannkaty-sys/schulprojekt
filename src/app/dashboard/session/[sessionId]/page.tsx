@@ -3,10 +3,12 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
   supabase,
   sendEvent,
   updateSessionStatus,
+  deleteSession,
   sessionCodeFromId,
   type Session,
   type Participant,
@@ -14,9 +16,11 @@ import {
 
 export default function SessionControl() {
   const { sessionId } = useParams<{ sessionId: string }>()
+  const router = useRouter()
   const [session, setSession] = useState<Session | null>(null)
   const [participants, setParticipants] = useState<Participant[]>([])
   const [notes, setNotes] = useState<Record<string, string>>({})
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -67,6 +71,18 @@ export default function SessionControl() {
 
   async function handleFinish() {
     await updateSessionStatus(sessionId, 'finished')
+  }
+
+  async function handleDelete() {
+    if (!confirm('Session wirklich löschen? Alle Teilnehmerdaten gehen verloren.')) return
+    setDeleting(true)
+    try {
+      await deleteSession(sessionId)
+      router.push('/dashboard')
+    } catch {
+      alert('Löschen fehlgeschlagen.')
+      setDeleting(false)
+    }
   }
 
   async function saveNote(participantId: string, note: string) {
@@ -122,7 +138,17 @@ export default function SessionControl() {
             <button className="btn btn-secondary" onClick={handleFinish}>🏁 Test beenden</button>
           )}
           {session.status === 'finished' && (
-            <button className="btn btn-secondary" onClick={copyForClaude}>📋 Kopieren</button>
+            <>
+              <button className="btn btn-secondary" onClick={copyForClaude}>📋 Kopieren</button>
+              <button
+                className="btn"
+                onClick={handleDelete}
+                disabled={deleting}
+                style={{ background: 'var(--red, #e55)', color: '#fff', border: 'none' }}
+              >
+                {deleting ? '…' : '🗑 Löschen'}
+              </button>
+            </>
           )}
         </div>
       </div>

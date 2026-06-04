@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic'
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { supabase, createSession, sessionCodeFromId, type Session, type Question } from '@/lib/supabase'
+import { supabase, createSession, deleteSession, sessionCodeFromId, type Session, type Question } from '@/lib/supabase'
 
 function parseQuestionsFromHTML(html: string): Question[] {
   const match = html.match(/<script[^>]+id=["']questions["'][^>]*>([\s\S]*?)<\/script>/)
@@ -16,7 +16,57 @@ function parseQuestionsFromHTML(html: string): Question[] {
   }
 }
 
+function PinScreen({ onSuccess }: { onSuccess: () => void }) {
+  const [pin, setPin] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setLoading(true)
+    setError('')
+    const res = await fetch('/api/dashboard-auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin }),
+    })
+    setLoading(false)
+    if (res.ok) {
+      sessionStorage.setItem('dashboard_authed', 'true')
+      onSuccess()
+    } else {
+      setError('Falscher PIN.')
+      setPin('')
+    }
+  }
+
+  return (
+    <div className="center" style={{ minHeight: '100vh' }}>
+      <div className="card" style={{ width: '100%', maxWidth: 360 }}>
+        <h1 style={{ fontSize: '1.25rem', fontWeight: 700, marginBottom: '1.5rem', textAlign: 'center' }}>
+          Dashboard – PIN eingeben
+        </h1>
+        <form onSubmit={handleSubmit}>
+          <input
+            type="password"
+            placeholder="PIN"
+            value={pin}
+            onChange={e => setPin(e.target.value)}
+            autoFocus
+            style={{ marginBottom: '1rem', textAlign: 'center', letterSpacing: '0.25em', fontSize: '1.25rem' }}
+          />
+          {error && <p style={{ color: 'var(--red)', fontSize: '0.875rem', marginBottom: '0.75rem', textAlign: 'center' }}>{error}</p>}
+          <button className="btn btn-primary" style={{ width: '100%' }} disabled={loading || !pin}>
+            {loading ? 'Prüfen…' : 'Weiter'}
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 export default function Dashboard() {
+  const [authed, setAuthed] = useState<boolean | null>(null)
   const [sessions, setSessions] = useState<Session[]>([])
   const [title, setTitle] = useState('')
   const [type, setType] = useState<'quiz' | 'test'>('quiz')
@@ -25,8 +75,15 @@ export default function Dashboard() {
   const [fileError, setFileError] = useState('')
   const [creating, setCreating] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   useEffect(() => {
+    const ok = sessionStorage.getItem('dashboard_authed') === 'true'
+    setAuthed(ok)
+  }, [])
+
+  useEffect(() => {
+    if (!authed) return
     async function load() {
       const { data } = await supabase.from('sessions').select('*').order('created_at', { ascending: false })
       setSessions(data ?? [])
@@ -38,7 +95,10 @@ export default function Dashboard() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, () => load())
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [])
+  }, [authed])
+
+  if (authed === null) return null
+  if (!authed) return <PinScreen onSuccess={() => setAuthed(true)} />
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     setFileError('')
@@ -66,6 +126,20 @@ export default function Dashboard() {
       // ignore
     } finally {
       setCreating(false)
+    }
+  }
+
+  async function handleDelete(id: string, e: React.MouseEvent) {
+    e.preventDefault()
+    if (!confirm('Session wirklich löschen? Alle Teilnehmerdaten gehen verloren.')) return
+    setDeletingId(id)
+    try {
+      await deleteSession(id)
+      setSessions(prev => prev.filter(s => s.id !== id))
+    } catch {
+      alert('Löschen fehlgeschlagen.')
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -148,6 +222,15 @@ export default function Dashboard() {
             >
               {s.status === 'waiting' ? '▶ Steuern' : s.status === 'active' ? '→ Live' : '→ Ergebnisse'}
             </Link>
+            <button
+              className="btn"
+              onClick={e => handleDelete(s.id, e)}
+              disabled={deletingId === s.id}
+              style={{ flexShrink: 0, background: 'var(--red, #e55)', color: '#fff', border: 'none', padding: '0.4rem 0.75rem', fontSize: '0.85rem' }}
+              title="Session löschen"
+            >
+              {deletingId === s.id ? '…' : '🗑'}
+            </button>
           </div>
         ))}
       </div>
