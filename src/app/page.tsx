@@ -10,24 +10,36 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
 
   async function fetchActive() {
-    const { data } = await supabase
-      .from('sessions')
-      .select('*')
-      .in('status', ['waiting', 'active'])
-      .order('created_at', { ascending: false })
-    setActiveSessions((data as Session[]) ?? [])
-    setLoading(false)
+    try {
+      const { data } = await supabase
+        .from('sessions')
+        .select('*')
+        .in('status', ['waiting', 'active'])
+        .order('created_at', { ascending: false })
+      setActiveSessions((data as Session[]) ?? [])
+    } catch {
+      setActiveSessions([])
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => {
     fetchActive()
 
-    const channel = supabase
-      .channel('home-sessions')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, fetchActive)
-      .subscribe()
+    let channel: ReturnType<typeof supabase.channel> | null = null
+    try {
+      channel = supabase
+        .channel('home-sessions')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, fetchActive)
+        .subscribe()
+    } catch {
+      // Realtime nicht verfügbar, polling reicht
+    }
 
-    return () => { supabase.removeChannel(channel) }
+    return () => {
+      if (channel) supabase.removeChannel(channel)
+    }
   }, [])
 
   return (
